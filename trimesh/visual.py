@@ -34,7 +34,7 @@ from . import caching
 from . import grouping
 
 
-class ColorVisuals(object):
+class MeshVisuals(object):
     """
     Store color information about a mesh.
     """
@@ -43,6 +43,9 @@ class ColorVisuals(object):
                  mesh=None,
                  face_colors=None,
                  vertex_colors=None,
+                 uv_vertices=None,
+                 uv_faces=None,
+                 texture=None,
                  **kwargs):
         """
         Store color information about a mesh.
@@ -53,6 +56,10 @@ class ColorVisuals(object):
                        are associated with
         face_ colors:  (n,3|4) or (3,) or (4,) uint8, colors per-face
         vertex_colors: (n,3|4) or (3,) or (4,) uint8, colors per-vertex
+        
+        uv_vertices:   (n,2) float32, coordinates
+        uv_faces:      (n,3) int of uv_vertex indices
+        texture:       (x,y) or (x,y,3|4) any type of image
         """
         self.mesh = mesh
         self._data = caching.DataStore()
@@ -72,7 +79,19 @@ class ColorVisuals(object):
 
         if vertex_colors is not None:
             self.vertex_colors = vertex_colors
+            
+        if uv_vertices is not None:
+            self.uv_vertices = uv_vertices
 
+        if uv_faces is not None:
+            self.uv_faces = uv_faces
+
+        if texture is not None:
+            self.texture = texture
+
+        #contains GL texture id for rendering
+        self.texture_id = None
+            
     @property
     def transparency(self):
         """
@@ -180,6 +199,39 @@ class ColorVisuals(object):
         self._data['face_colors'] = colors
         self._cache.verify()
 
+    @property
+    def uv_vertices(self):
+        if "uv_vertices" in self._data:
+            return self._data["uv_vertices"]
+        elif "uv_vertices" in self._cache:
+            return self._cache["uv_vertices"]
+
+    @uv_vertices.setter
+    def uv_vertices(self, value):
+        self._data['uv_vertices'] = value
+
+    @property
+    def uv_faces(self):
+        if "uv_faces" in self._data:
+            return self._data["uv_faces"]
+        elif "uv_faces" in self._cache:
+            return self._cache["uv_faces"]
+
+    @uv_faces.setter
+    def uv_faces(self, value):
+        self._data['uv_faces'] = value
+
+    @property
+    def texture(self):
+        if "texture" in self._data:
+            return self._data["texture"]
+        elif "texture" in self._cache:
+            return self._cache["texture"]
+
+    @texture.setter
+    def texture(self, value):
+        self._data['texture'] = value
+        
     @property
     def vertex_colors(self):
         """
@@ -373,13 +425,13 @@ class ColorVisuals(object):
 
         Returns
         ----------
-        visual: ColorVisuals object containing a subset of faces.
+        visual: MeshVisuals object containing a subset of faces.
         """
         if self.defined:
-            result = ColorVisuals(
+            result = MeshVisuals(
                 face_colors=self.face_colors[face_index])
         else:
-            result = ColorVisuals()
+            result = MeshVisuals()
 
         return result
 
@@ -412,16 +464,16 @@ class ColorVisuals(object):
 
     def concatenate(self, other, *args):
         """
-        Concatenate two or more ColorVisuals objects into a single object.
+        Concatenate two or more MeshVisuals objects into a single object.
 
         Parameters
         -----------
-        other: ColorVisuals object
-        *args: ColorVisuals objects
+        other: MeshVisuals object
+        *args: MeshVisuals objects
 
         Returns
         -----------
-        result: ColorVisuals object containing information from current
+        result: MeshVisuals object containing information from current
                 object and others in the order it was passed.
         """
         result = concatenate_visuals(self, other, *args)
@@ -429,15 +481,15 @@ class ColorVisuals(object):
 
     def __add__(self, other):
         """
-        Concatenate two ColorVisuals objects into a single object.
+        Concatenate two MeshVisuals objects into a single object.
 
         Parameters
         -----------
-        other: ColorVisuals object
+        other: MeshVisuals object
 
         Returns
         -----------
-        result: ColorVisuals object containing information from current
+        result: MeshVisuals object containing information from current
                 object and other in the order (self, other)
         """
         return self.concatenate(other)
@@ -469,9 +521,9 @@ def create_visual(**kwargs):
 
     Returns
     ----------
-    visuals: ColorVisuals object.
+    visuals: MeshVisuals object.
     """
-    return ColorVisuals(**kwargs)
+    return MeshVisuals(**kwargs)
 
 
 def to_rgba(colors, dtype=np.uint8):
@@ -545,21 +597,21 @@ def concatenate_visuals(visuals, *args):
 
     Parameters
     ----------
-    visuals: ColorVisuals object, or list of same
-    *args:  ColorVisuals object, or list of same
+    visuals: MeshVisuals object, or list of same
+    *args:  MeshVisuals object, or list of same
 
     Returns
     ----------
-    concat: ColorVisuals object
+    concat: MeshVisuals object
     """
-    # get a flat list of ColorVisuals objects
+    # get a flat list of MeshVisuals objects
     visuals = np.append(visuals, args)
 
     # get the type of visuals (vertex or face) removing undefined
     modes = {v.kind for v in visuals}.difference({None})
     if len(modes) == 0:
         # none of the visuals have anything defined
-        return ColorVisuals()
+        return MeshVisuals()
     else:
         # if we have visuals with different modes defined
         # arbitrarily get one of them
@@ -573,7 +625,7 @@ def concatenate_visuals(visuals, *args):
         # use an eval so we can use the object property
         colors.append(eval(append))
     # use an eval so we can use the constructor
-    concat = eval('ColorVisuals({}_colors=np.vstack(colors))'.format(mode))
+    concat = eval('MeshVisuals({}_colors=np.vstack(colors))'.format(mode))
     return concat
 
 

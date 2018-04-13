@@ -36,12 +36,40 @@ def load_wavefront(file_obj, **kwargs):
         # to our list of meshes
         if len(current['f']) > 0:
             # get vertices as clean numpy array
-            vertices = np.array(current['v'],
+            vertices = np.array(attribs['v'],
                                 dtype=np.float64).reshape((-1, 3))
             # do the same for faces
             faces = np.array(current['f'],
                              dtype=np.int64).reshape((-1, 3))
 
+            #UVs (texture vertices)                                              
+            uv = np.array(attribs['vt'],
+                             dtype=np.float64).reshape((-1, 2))
+
+            #UV indices                                              
+            uvfaces = np.array(current['ft'],
+                             dtype=np.int64).reshape((-1, 3))
+                             
+            #normals                                              
+            normals = np.array(attribs['vn'],
+                             dtype=np.float64).reshape((-1, 3))
+                             
+            #normal indices                                              
+            normalfaces = np.array(current['fn'],
+                             dtype=np.int64).reshape((-1, 3))
+
+            loaded = {'vertices': vertices,
+                      'faces': faces,
+                      'vertex_normals': normals[normalfaces],
+                      'uv_vertices': uv, #these will be used by MeshVisuals
+                      'uv_faces': uvfaces, #these will be used by MeshVisuals
+                      'metadata': {}}
+                      
+            #i commented out a lot
+            #might have missed why things are coded as they were
+            #but with the above, loading works for me
+              
+            """                                                                              
             # get keys and values of remap as numpy arrays
             # we are going to try to preserve the order as
             # much as possible by sorting by remap key
@@ -75,7 +103,8 @@ def load_wavefront(file_obj, **kwargs):
                 texture = texture.reshape((len(vertices), -1))
                 # save vertex texture with correct ordering
                 loaded['metadata']['vertex_texture'] = texture[vert_order]
-
+            """
+                
             # build face groups information
             # faces didn't move around so we don't have to reindex
             if len(current['g']) > 0:
@@ -88,7 +117,7 @@ def load_wavefront(file_obj, **kwargs):
             meshes.append(loaded)
 
     attribs = {k: [] for k in ['v', 'vt', 'vn']}
-    current = {k: [] for k in ['v', 'vt', 'vn', 'f', 'g']}
+    current = {k: [] for k in ['v', 'vt', 'vn', 'f', 'g', 'ft', 'fn']} 
     # remap vertex indexes {str key: int index}
     remap = {}
     next_idx = 0
@@ -113,6 +142,18 @@ def load_wavefront(file_obj, **kwargs):
             for f in ft:
                 # loop through each vertex reference of a face
                 # we are reshaping later into (n,3)
+                
+                f_split = f.split('/')
+                
+                #geometric faces, texture faces, normal faces
+                for i, t in zip(f_split, ['f','ft','fn']): 
+                    if i: current[t].append(int(i)-1)
+                
+                #geometric and texture faces are independent
+                #remap according to geometric faces messes up texture faces
+                #also i dont see why it is needed
+
+                """
                 if f not in remap:
                     remap[f] = next_idx
                     next_idx += 1
@@ -128,6 +169,7 @@ def load_wavefront(file_obj, **kwargs):
                         current['vn'].append(
                             attribs['vn'][int(f_split[2]) - 1])
                 current['f'].append(remap[f])
+                """
         elif line_split[0] == 'o':
             # defining a new object
             append_mesh()
@@ -142,8 +184,8 @@ def load_wavefront(file_obj, **kwargs):
             group_idx += 1
             current['g'].append((group_idx, len(current['f']) // 3))
 
-    if next_idx > 0:
-        append_mesh()
+    #if next_idx > 0:
+    append_mesh()
 
     return meshes
 

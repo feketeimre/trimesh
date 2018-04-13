@@ -82,12 +82,14 @@ class SceneViewer(pyglet.window.Window):
 
     def _add_mesh(self, name, mesh):
         if self._smooth and len(mesh.faces) < _SMOOTH_MAX_FACES:
-            display = mesh.smoothed()
+            display = mesh.smoothed()  # smoothing removes texture data
         else:
             display = mesh.copy()
             display.unmerge_vertices()
 
-        self.vertex_list[name] = self.batch.add_indexed(
+        display.visual.texture_id = self.gen_texture(display.visual.texture) # create texture, remember id
+        # we cant use indexed
+        self.vertex_list[name] = self.batch.add(  
             *mesh_to_vertex_list(display))
         self.vertex_list_md5[name] = geometry_md5(mesh)
         self.vertex_list_mode[name] = gl.GL_TRIANGLES
@@ -195,6 +197,16 @@ class SceneViewer(pyglet.window.Window):
 
         gl.glLineWidth(1.5)
         gl.glPointSize(4)
+
+    def gen_texture(self, image):
+        ##todo load texture with correct data type
+        ## for now the texture is an 8bit RGB
+        i = (gl.GLuint * 1) ()
+        gl.glGenTextures(1,i)
+        gl.glBindTexture(gl.GL_TEXTURE_2D, i[0])
+        gl.glPixelStorei(gl.GL_UNPACK_ALIGNMENT,1)
+        gl.glTexImage2D(gl.GL_TEXTURE_2D, 0, 3, image.shape[0], image.shape[1], 0, gl.GL_RGB, gl.GL_UNSIGNED_BYTE, image.tostring())
+        return i[0]
 
     def toggle_culling(self):
         self.view['cull'] = not self.view['cull']
@@ -313,7 +325,9 @@ class SceneViewer(pyglet.window.Window):
             gl.glMultMatrixf(_gl_matrix(transform))
             # get the mode of the current geometry
             mode = self.vertex_list_mode[geometry_name]
-            # draw the mesh with its transform applied
+            #draw the mesh with its transform applied
+            #do something to bind the correct texture
+            #not sure why it wont texture it                                                        
             self.vertex_list[geometry_name].draw(mode=mode)
             # pop the matrix stack as we drew what we needed to draw
             gl.glPopMatrix()
@@ -339,6 +353,36 @@ class SceneViewer(pyglet.window.Window):
         else:
             colorbuffer.save(filename=file_obj)
 
+##Stolen from pyglet doc
+#there must be a better way to do this
+class TextureEnableGroup(pyglet.graphics.Group):
+    def set_state(self):
+        gl.glEnable(gl.GL_TEXTURE_2D)
+
+    def unset_state(self):
+        gl.glDisable(gl.GL_TEXTURE_2D)
+
+texture_enable_group = TextureEnableGroup()
+
+class TextureBindGroup(pyglet.graphics.Group):
+    def __init__(self, texture):
+        super(TextureBindGroup, self).__init__(parent=texture_enable_group)
+        self.texture = texture
+
+    def set_state(self):
+        gl.glBindTexture(gl.GL_TEXTURE_2D, self.texture)
+
+    # No unset_state method required.
+
+    def __eq__(self, other):
+        return (self.__class__ is other.__class__ and
+                self.texture == other.texture and
+
+                self.parent == other.parent)
+
+    def __hash__(self):
+        return hash((self.texture))
+##
 
 def _view_transform(view):
     '''
@@ -364,18 +408,28 @@ def mesh_to_vertex_list(mesh, group=None):
     Convert a Trimesh object to arguments for an
     indexed vertex list constructor.
     '''
-    normals = mesh.vertex_normals.reshape(-1).tolist()
-    faces = mesh.faces.reshape(-1).tolist()
-    vertices = mesh.vertices.reshape(-1).tolist()
+    normals = mesh.vertex_normals#.reshape(-1).tolist()
+    faces = mesh.faces#.reshape(-1)#
+    vertices = mesh.vertices#.reshape(-1)#.tolist()
     color_gl = _validate_colors(mesh.visual.vertex_colors,
                                 len(mesh.vertices))
 
+    uvs = mesh.visual.uv_vertices
+    uvi = mesh.visual.uv_faces
+    
+    #geometric and texture indices are independent
+    #we cant use face to index textures
+    #so we index everything with the respective faces/uv faces
+    #and use pyglet.batch.add instead of add indexed 
+    
     args = (len(mesh.vertices),  # number of vertices
             gl.GL_TRIANGLES,    # mode
-            group,              # group
-            faces,              # indices
-            ('v3f/static', vertices),
-            ('n3f/static', normals),
+            TextureBindGroup(mesh.visual.texture_id),              # group
+            #faces,              # indices
+            
+            ('v3f/static', vertices[faces].flatten().tolist()),
+            ('n3f/static', normals[faces].flatten().tolist()),
+            ('t2f/static', uvs[uvi].flatten().tolist()),
             color_gl)
     return args
 
